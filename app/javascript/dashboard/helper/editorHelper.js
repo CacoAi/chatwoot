@@ -13,6 +13,55 @@ import * as Sentry from '@sentry/vue';
 export const SIGNATURE_DELIMITER = '--';
 
 /**
+ * Custom serialize function that handles team mentions by patching the original serializer
+ */
+const serializeWithTeamMentions = (doc, options) => {
+  // Temporarily patch the mention serializer in the original MessageMarkdownSerializer
+  const originalMentionSerializer = MessageMarkdownSerializer.nodes.mention;
+
+  // Custom mention serializer that supports both user and team mentions
+  const customMentionSerializer = (state, node) => {
+    const userId = node.attrs.userId || '';
+    const displayName = node.attrs.userFullName || '';
+    let mentionType = 'user';
+    let actualUserId = userId;
+
+    // Check if this is a team mention (userId prefixed with 'team_')
+    if (userId.toString().startsWith('team_')) {
+      mentionType = 'team';
+      actualUserId = userId.substring(5); // Remove 'team_' prefix for the URI
+    }
+
+    const uri = state.esc(
+      `mention://${mentionType}/${actualUserId}/${encodeURIComponent(displayName)}`
+    );
+    const escapedDisplayName = state.esc(`@${displayName}`);
+
+    state.write(`[${escapedDisplayName}](${uri})`);
+  };
+
+  // Temporarily replace the mention serializer
+  MessageMarkdownSerializer.nodes.mention = customMentionSerializer;
+
+  try {
+    // Use the original serializer with our custom mention handler
+    return MessageMarkdownSerializer.serialize(doc, options);
+  } finally {
+    // Restore the original mention serializer
+    MessageMarkdownSerializer.nodes.mention = originalMentionSerializer;
+  }
+};
+
+/**
+ * Custom MessageMarkdownSerializer with team mention support
+ */
+export const CustomMessageMarkdownSerializer = {
+  serialize: serializeWithTeamMentions,
+  nodes: MessageMarkdownSerializer.nodes,
+  marks: MessageMarkdownSerializer.marks,
+};
+
+/**
  * Parse and Serialize the markdown text to remove any extra spaces or new lines
  */
 export function cleanSignature(signature) {
@@ -26,7 +75,7 @@ export function cleanSignature(signature) {
     const nodes = new MessageMarkdownTransformer(messageSchema).parse(
       signature
     );
-    return MessageMarkdownSerializer.serialize(nodes);
+    return CustomMessageMarkdownSerializer.serialize(nodes);
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn(e);
@@ -302,9 +351,15 @@ const createNode = (editorView, nodeType, content) => {
   const { state } = editorView;
   switch (nodeType) {
     case 'mention':
+      const mentionType = content.type || 'user';
+      const displayName = content.displayName || content.name;
+
+      // For teams, prefix the userId to indicate type, keep displayName clean
+      const userId = mentionType === 'team' ? `team_${content.id}` : content.id;
+
       return state.schema.nodes.mention.create({
-        userId: content.id,
-        userFullName: content.name,
+        userId: userId,
+        userFullName: displayName,
       });
     case 'cannedResponse':
       return new MessageMarkdownTransformer(messageSchema).parse(content);

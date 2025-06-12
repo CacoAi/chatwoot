@@ -52,6 +52,7 @@ import {
   removeSignature as removeSignatureHelper,
   scrollCursorIntoView,
   setURLWithQueryAndSize,
+  CustomMessageMarkdownSerializer,
 } from 'dashboard/helper/editorHelper';
 import {
   hasPressedEnterAndNotCmdOrShift,
@@ -156,7 +157,7 @@ const imageUpload = useTemplateRef('imageUpload');
 const editor = useTemplateRef('editor');
 
 const contentFromEditor = () => {
-  return MessageMarkdownSerializer.serialize(editorView.state.doc);
+  return CustomMessageMarkdownSerializer.serialize(editorView.state.doc);
 };
 
 const shouldShowVariables = computed(() => {
